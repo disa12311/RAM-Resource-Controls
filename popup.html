@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 380px;
+      min-height: 400px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f5f5f5;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #0078d4 0%, #1e90ff 100%);
+      color: white;
+      padding: 24px 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 20px;
+    }
+
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-group {
+      margin-bottom: 18px;
+    }
+
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .input-with-unit {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type="number"] {
+      flex: 1;
+      padding: 11px 12px;
+      border: 1px solid #d1d1d1;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+      background: white;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #0078d4;
+      box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.1);
+    }
+
+    input[type="number"]:hover:not(:focus) {
+      border-color: #999;
+    }
+
+    .unit-label {
+      font-size: 14px;
+      color: #666;
+      font-weight: 500;
+      min-width: 40px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      background: #f9f9f9;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+
+    .checkbox-group:hover {
+      background: #f0f0f0;
+      border-color: #e0e0e0;
+    }
+
+    .checkbox-group.active {
+      background: #e7f3ff;
+      border-color: #b3d9ff;
+    }
+
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: #0078d4;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .checkbox-content {
+      flex: 1;
+    }
+
+    .checkbox-label {
+      font-size: 13px;
+      color: #1a1a1a;
+      cursor: pointer;
+      font-weight: 500;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .checkbox-description {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #0078d4;
+      color: white;
+      grid-column: 1 / -1;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #106ebe;
+      box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #0078d4;
+      border: 2px solid #0078d4;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #f0f7ff;
+    }
+
+    .btn-danger {
+      background: white;
+      color: #d13438;
+      border: 2px solid #d13438;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #fff5f5;
+    }
+
+    .stats-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      border-radius: 8px;
+      color: white;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      opacity: 0.9;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.3);
+      margin: 12px 0;
+      display: none;
+    }
+
+    .info-banner {
+      background: #fff9e6;
+      border: 1px solid #ffd966;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #8b6914;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .quick-action-btn {
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.active {
+      background: #107c10;
+    }
+
+    .status-indicator.inactive {
+      background: #999;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #323232;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Responsive cho màn hình nhỏ */
+    @media (max-width: 400px) {
+      body {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>RAM Resource Controls</h1>
+    <p class="subtitle">
+      <span class="status-indicator" id="statusIndicator"></span>
+      <span id="statusText">Đang tải...</span>
+    </p>
+  </div>
+
+  <div class="content">
+    <div class="stats-card">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-value" id="totalTabsSlept">0</span>
+          <span class="stat-label">Tabs đã ngủ</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="activeTabsCount">0</span>
+          <span class="stat-label">Tabs hoạt động</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Cấu hình</div>
+      
+      <div class="control-group">
+        <label for="ramLimit">Giới hạn RAM mỗi tab</label>
+        <div class="input-with-unit">
+          <input type="number" id="ramLimit" min="1000" max="5000" step="100" value="2000">
+          <span class="unit-label">MB</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="sleepTimer">Thời gian ngủ đông</label>
+        <div class="input-with-unit">
+          <input type="number" id="sleepTimer" min="1" max="60" value="10">
+          <span class="unit-label">phút</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="checkbox-group" id="autoSleepGroup">
+          <input type="checkbox" id="autoSleep">
+          <div class="checkbox-content">
+            <label class="checkbox-label" for="autoSleep">
+              Tự động ngủ đông tabs
+            </label>
+            <div class="checkbox-description">
+              Tabs không hoạt động sẽ tự động ngủ để giải phóng RAM
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="checkbox-group" id="aggressiveModeGroup">
+          <input type="checkbox" id="aggressiveMode">
+          <div class="checkbox-content">
+            <label class="checkbox-label" for="aggressiveMode">
+              Chế độ tích cực
+            </label>
+            <div class="checkbox-description">
+              Ngủ đông nhanh hơn khi RAM cao (>70%)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="applySettings">
+        <span id="applyText">Áp dụng cài đặt</span>
+      </button>
+
+      <div class="quick-actions">
+        <button class="btn-secondary quick-action-btn" id="sleepNow">
+          Ngủ ngay
+        </button>
+        <button class="btn-danger quick-action-btn" id="resetStats">
+          Reset
+        </button>
+      </div>
+
+      <div class="info-banner">
+        <span class="info-banner-icon"></span>
+        <span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
