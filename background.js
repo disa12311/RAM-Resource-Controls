@@ -46,12 +46,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   
   // Show welcome notification
   if (details.reason === 'install') {
-    chrome.notifications.create({
+    chrome.notifications.create('install-notification', {
       type: 'basic',
-      iconUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%230078d4" width="48" height="48"/%3E%3C/svg%3E',
-      title: 'RAM Resource Controls Installed',
-      message: 'Extension is ready! Right-click on tabs for quick actions.',
-      priority: 1
+      title: 'RAM Resource Controls',
+      message: 'Extension installed! Right-click tabs for quick actions.',
+      priority: 1,
+      requireInteraction: false
+    }).catch(err => {
+      console.log('[Background] Notification error (safe to ignore):', err);
     });
   }
   
@@ -444,13 +446,22 @@ async function importAllData(dataStr) {
 
 // Show notification helper
 function showNotification(title, message) {
-  chrome.notifications.create({
+  const notificationId = 'notification-' + Date.now();
+  
+  chrome.notifications.create(notificationId, {
     type: 'basic',
-    iconUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%230078d4" width="48" height="48"/%3E%3C/svg%3E',
     title,
     message,
-    priority: 0
+    priority: 0,
+    requireInteraction: false
+  }).catch(err => {
+    console.log('[Background] Notification error (safe to ignore):', err);
   });
+  
+  // Auto-clear after 5 seconds
+  setTimeout(() => {
+    chrome.notifications.clear(notificationId).catch(() => {});
+  }, 5000);
 }
 
 // Cleanup on unload
