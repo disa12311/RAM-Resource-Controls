@@ -105,7 +105,7 @@ class PopupController {
       
     } catch (error) {
       console.error('[Popup] Lỗi load và render:', error);
-      this.showToast('❌ Lỗi tải dữ liệu', 'error');
+      this.showToast('Lỗi tải dữ liệu');
     }
   }
 
@@ -188,13 +188,13 @@ class PopupController {
 
     // Validate
     if (ramLimit < 1000 || ramLimit > 5000) {
-      this.showToast('⚠️ RAM phải từ 1000-5000 MB', 'warning');
+      this.showToast('RAM phải từ 1000-5000 MB');
       this.state.isApplying = false;
       return;
     }
 
     if (sleepTimer < 1 || sleepTimer > 60) {
-      this.showToast('⚠️ Thời gian phải từ 1-60 phút', 'warning');
+      this.showToast('Thời gian phải từ 1-60 phút');
       this.state.isApplying = false;
       return;
     }
@@ -215,14 +215,14 @@ class PopupController {
       this.updateCheckboxGroupState('aggressiveModeGroup', aggressiveMode);
 
       // Show success
-      this.showToast('✓ Đã lưu cài đặt thành công', 'success');
+      this.showToast('Đã lưu cài đặt');
       
       // Update stats
       await this.updateStats();
 
     } catch (error) {
       console.error('[Popup] Lỗi áp dụng settings:', error);
-      this.showToast('❌ Lỗi lưu cài đặt', 'error');
+      this.showToast('Lỗi lưu cài đặt');
     } finally {
       this.refs.applyText.textContent = 'Áp dụng cài đặt';
       this.refs.applySettings.disabled = false;
@@ -243,9 +243,11 @@ class PopupController {
       if (response.success && response.data) {
         const { slept } = response.data;
         if (slept > 0) {
-          this.showToast(`✓ Đã ngủ ${slept} tabs`, 'success');
+          this.showToast(`Đã ngủ ${slept} tabs`);
+          // Update badge via background
+          chrome.runtime.sendMessage({ action: 'updateBadge' });
         } else {
-          this.showToast('ℹ️ Không có tabs cần ngủ', 'info');
+          this.showToast('Không có tabs cần ngủ');
         }
       }
 
@@ -253,7 +255,7 @@ class PopupController {
       
     } catch (error) {
       console.error('[Popup] Lỗi sleep now:', error);
-      this.showToast('❌ Lỗi khi ngủ tabs', 'error');
+      this.showToast('Lỗi khi ngủ tabs');
     } finally {
       this.refs.sleepNow.innerHTML = 'Ngủ ngay';
       this.refs.sleepNow.disabled = false;
@@ -273,12 +275,12 @@ class PopupController {
       
       await this.sendMessage({ action: 'resetStats' });
       
-      this.showToast('✓ Đã reset thống kê', 'success');
+      this.showToast('Đã reset thống kê');
       await this.updateStats();
       
     } catch (error) {
       console.error('[Popup] Lỗi reset stats:', error);
-      this.showToast('❌ Lỗi reset thống kê', 'error');
+      this.showToast('Lỗi reset thống kê');
     } finally {
       this.refs.resetStats.disabled = false;
     }
