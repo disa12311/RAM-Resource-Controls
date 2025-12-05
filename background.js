@@ -44,17 +44,23 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     delayInMinutes: 0
   });
   
-  // Show welcome notification
+  // Initialize badge
+  updateBadge();
+  
+  // Show welcome message in console (no notification)
   if (details.reason === 'install') {
-    chrome.notifications.create('install-notification', {
-      type: 'basic',
-      title: 'RAM Resource Controls',
-      message: 'Extension installed! Right-click tabs for quick actions.',
-      priority: 1,
-      requireInteraction: false
-    }).catch(err => {
-      console.log('[Background] Notification error (safe to ignore):', err);
-    });
+    console.log('[Background] Welcome! Extension installed successfully.');
+    console.log('[Background] Right-click on tabs for quick actions.');
+    console.log('[Background] Use Ctrl+Shift+S to sleep current tab.');
+    
+    // Set initial badge
+    chrome.action.setBadgeBackgroundColor({ color: '#0078d4' });
+    chrome.action.setBadgeText({ text: 'NEW' });
+    
+    // Clear "NEW" after 10 seconds
+    setTimeout(() => {
+      updateBadge();
+    }, 10000);
   }
   
   console.log('[Background] Initialization complete');
@@ -130,17 +136,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     switch (info.menuItemId) {
       case 'sleep-tab':
         await chrome.tabs.discard(tab.id);
-        showNotification('Tab Sleeping', `Tab has been put to sleep`);
+        updateBadge('Sleeping...', '#ff8c00');
+        setTimeout(() => updateBadge(), 2000);
         break;
 
       case 'never-sleep':
         await whitelistManager.addToWhitelist(domain);
-        showNotification('Domain Whitelisted', `${domain} will never sleep`);
+        updateBadge('Added', '#107c10');
+        setTimeout(() => updateBadge(), 2000);
         break;
 
       case 'always-sleep':
         await whitelistManager.addToBlacklist(domain);
-        showNotification('Domain Blacklisted', `${domain} will sleep quickly`);
+        updateBadge('Added', '#d13438');
+        setTimeout(() => updateBadge(), 2000);
         break;
 
       case 'wake-all':
@@ -148,7 +157,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         for (const t of tabs) {
           await chrome.tabs.reload(t.id);
         }
-        showNotification('Tabs Awakened', `Woke up ${tabs.length} tabs`);
+        updateBadge(`${tabs.length}`, '#107c10');
+        setTimeout(() => updateBadge(), 3000);
         break;
     }
   } catch (error) {
@@ -164,7 +174,8 @@ chrome.commands.onCommand.addListener(async (command) => {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab) {
           await chrome.tabs.discard(activeTab.id);
-          showNotification('Tab Sleeping', 'Current tab has been put to sleep');
+          updateBadge('Slept', '#0078d4');
+          setTimeout(() => updateBadge(), 2000);
         }
         break;
 
@@ -173,17 +184,16 @@ chrome.commands.onCommand.addListener(async (command) => {
         for (const tab of sleepingTabs) {
           await chrome.tabs.reload(tab.id);
         }
-        showNotification('All Tabs Awakened', `Woke up ${sleepingTabs.length} tabs`);
+        updateBadge(`${sleepingTabs.length}`, '#107c10');
+        setTimeout(() => updateBadge(), 3000);
         break;
 
       case 'toggle-auto-sleep':
         const config = resourceControls.config;
         const newState = !config.autoSleep;
         await resourceControls.updateConfig({ autoSleep: newState });
-        showNotification(
-          'Auto Sleep ' + (newState ? 'Enabled' : 'Disabled'),
-          newState ? 'Tabs will sleep automatically' : 'Auto sleep is off'
-        );
+        updateBadge(newState ? 'ON' : 'OFF', newState ? '#107c10' : '#999');
+        setTimeout(() => updateBadge(), 3000);
         break;
     }
   } catch (error) {
@@ -360,10 +370,8 @@ async function checkAndSleepTabsWithML() {
 
       // Show notification if significant
       if (sleptCount >= 5) {
-        showNotification(
-          'Tabs Optimized',
-          `Put ${sleptCount} tabs to sleep to free RAM`
-        );
+        updateBadge(sleptCount.toString(), '#0078d4');
+        console.log(`[Background] Badge updated: ${sleptCount} tabs optimized`);
       }
     }
 
@@ -382,6 +390,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       const result = await checkAndSleepTabsWithML();
       if (result.slept > 0) {
         console.log(`[Background] Auto-slept ${result.slept} tabs`);
+        updateBadge(); // Update badge with new total
       }
     } catch (error) {
       console.error('[Background] Alarm error:', error);
@@ -446,22 +455,36 @@ async function importAllData(dataStr) {
 
 // Show notification helper
 function showNotification(title, message) {
-  const notificationId = 'notification-' + Date.now();
-  
-  chrome.notifications.create(notificationId, {
-    type: 'basic',
-    title,
-    message,
-    priority: 0,
-    requireInteraction: false
-  }).catch(err => {
-    console.log('[Background] Notification error (safe to ignore):', err);
-  });
-  
-  // Auto-clear after 5 seconds
-  setTimeout(() => {
-    chrome.notifications.clear(notificationId).catch(() => {});
-  }, 5000);
+  // Deprecated - use updateBadge() instead
+  console.log(`[Background] ${title}: ${message}`);
+}
+
+// Update badge with stats
+async function updateBadge(text, color) {
+  try {
+    // If no text provided, show total slept count
+    if (!text) {
+      const stats = await chrome.storage.local.get(['totalTabsSlept']);
+      const count = stats.totalTabsSlept || 0;
+      
+      if (count > 0) {
+        text = count > 99 ? '99+' : count.toString();
+        color = '#0078d4';
+      } else {
+        text = '';
+        color = '#999';
+      }
+    }
+    
+    // Set badge
+    await chrome.action.setBadgeText({ text: text });
+    if (color) {
+      await chrome.action.setBadgeBackgroundColor({ color: color });
+    }
+    
+  } catch (error) {
+    console.error('[Background] Badge error:', error);
+  }
 }
 
 // Cleanup on unload
