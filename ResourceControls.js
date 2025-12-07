@@ -1,67 +1,55 @@
 /**
- * ResourceControls v3.0 - Advanced Core Module
- * Smart RAM management với ML-inspired logic
+ * ResourceControls v3.0 - RAM Monitoring Only
+ * Chỉ monitor RAM, không có chức năng sleep tabs
  */
 
 class ResourceControls {
   constructor() {
     this.config = {
       ramLimit: 2000,
-      sleepTimer: 10,
-      autoSleep: false,
-      aggressiveMode: false,
       checkInterval: 60000,
       updateInterval: 3000,
-      minInactiveTime: 60000,
       maxCacheAge: 2000,
       emergencyThreshold: 85,
       warningThreshold: 70,
       optimalThreshold: 60
     };
     
-    // Core data structures (optimized)
+    // Core data structures
     this.tabActivityTimes = new Map();
     this.tabMetadata = new Map();
     this.memoryCache = null;
     this.memoryCacheTime = 0;
-    this.sleepHistory = new Map();
     
     // Performance tracking
     this.stats = {
       checksPerformed: 0,
-      totalSlept: 0,
-      emergencySleeps: 0,
       averageCheckTime: 0,
-      lastCheckTime: 0
+      lastCheckTime: 0,
+      peakMemoryUsage: 0,
+      averageMemoryUsage: 0
     };
     
     // Debounce timers
     this.saveTimeout = null;
-    this.checkTimeout = null;
   }
 
   /**
-   * Initialize with enhanced error handling
+   * Initialize
    */
   async initialize() {
     try {
       const stored = await chrome.storage.local.get([
         'ramLimit',
-        'sleepTimer', 
-        'autoSleep',
-        'aggressiveMode',
         'tabActivityTimes',
         'tabMetadata',
         'stats'
       ]);
 
       // Merge config
-      Object.assign(this.config, {
-        ramLimit: stored.ramLimit,
-        sleepTimer: stored.sleepTimer,
-        autoSleep: stored.autoSleep,
-        aggressiveMode: stored.aggressiveMode
-      });
+      if (stored.ramLimit) {
+        this.config.ramLimit = stored.ramLimit;
+      }
 
       // Restore data structures
       if (stored.tabActivityTimes) {
@@ -84,8 +72,7 @@ class ResourceControls {
 
       console.log('[ResourceControls v3] Initialized:', {
         config: this.config,
-        trackedTabs: this.tabActivityTimes.size,
-        totalSlept: this.stats.totalSlept
+        trackedTabs: this.tabActivityTimes.size
       });
 
       return this;
@@ -96,7 +83,7 @@ class ResourceControls {
   }
 
   /**
-   * Initialize tab activities with smart defaults
+   * Initialize tab activities
    */
   async initializeTabActivities() {
     try {
@@ -118,8 +105,6 @@ class ResourceControls {
             createdAt: now,
             activationCount: 0,
             totalActiveTime: 0,
-            lastSleepTime: null,
-            sleepCount: 0,
             domain: this.extractDomain(tab.url),
             category: this.categorizeURL(tab.url)
           });
@@ -141,12 +126,10 @@ class ResourceControls {
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
     let cleaned = 0;
 
-    // Clean old tab data
     for (const [tabId, metadata] of this.tabMetadata.entries()) {
       if (now - metadata.createdAt > thirtyDays) {
         this.tabActivityTimes.delete(tabId);
         this.tabMetadata.delete(tabId);
-        this.sleepHistory.delete(tabId);
         cleaned++;
       }
     }
@@ -158,15 +141,12 @@ class ResourceControls {
   }
 
   /**
-   * Update config with validation
+   * Update config
    */
   async updateConfig(newConfig) {
     // Validate ranges
     if (newConfig.ramLimit) {
       newConfig.ramLimit = Math.max(1000, Math.min(5000, newConfig.ramLimit));
-    }
-    if (newConfig.sleepTimer) {
-      newConfig.sleepTimer = Math.max(1, Math.min(60, newConfig.sleepTimer));
     }
 
     Object.assign(this.config, newConfig);
@@ -200,6 +180,15 @@ class ResourceControls {
       if (usagePercent > this.config.emergencyThreshold) status = 'critical';
       else if (usagePercent > this.config.warningThreshold) status = 'warning';
       else if (usagePercent > this.config.optimalThreshold) status = 'elevated';
+
+      // Update peak memory
+      if (usagePercent > this.stats.peakMemoryUsage) {
+        this.stats.peakMemoryUsage = usagePercent;
+      }
+
+      // Update average memory
+      this.stats.averageMemoryUsage = 
+        (this.stats.averageMemoryUsage * 0.9) + (usagePercent * 0.1);
 
       this.memoryCache = {
         totalMB,
@@ -242,16 +231,12 @@ class ResourceControls {
       
       for (const tab of tabs) {
         const isActive = tab.id === activeTab?.id;
-        const isSleeping = tab.discarded;
         const lastActivity = this.tabActivityTimes.get(tab.id) || now;
         const inactiveTime = now - lastActivity;
         const metadata = this.tabMetadata.get(tab.id);
         
         // Enhanced RAM estimation
-        const estimatedRAM = this.estimateTabRAM(tab, isActive, isSleeping, inactiveTime, metadata);
-        
-        // Calculate sleep score (0-100, higher = should sleep more)
-        const sleepScore = this.calculateSleepScore(tab, inactiveTime, metadata, isActive, isSleeping);
+        const estimatedRAM = this.estimateTabRAM(tab, isActive, inactiveTime, metadata);
         
         tabsInfo.push({
           id: tab.id,
@@ -259,104 +244,41 @@ class ResourceControls {
           url: tab.url || 'about:blank',
           favIconUrl: tab.favIconUrl,
           isActive,
-          isSleeping,
           audible: tab.audible || false,
           estimatedRAM,
           lastActivity,
           inactiveTime,
           inactiveMinutes: Math.floor(inactiveTime / 60000),
-          metadata: metadata || null,
-          sleepScore
+          metadata: metadata || null
         });
       }
 
-      // Efficient counting with categories
-      let active = 0, sleeping = 0, total = tabs.length;
+      // Efficient counting
+      let active = 0, total = tabs.length;
       let totalRAM = 0;
       
       for (const info of tabsInfo) {
-        if (info.isSleeping) sleeping++;
-        else {
-          active++;
-          totalRAM += info.estimatedRAM;
-        }
+        active++;
+        totalRAM += info.estimatedRAM;
       }
 
       return {
         tabs: tabsInfo,
         total,
         active,
-        sleeping,
         totalRAM,
         averageRAM: active > 0 ? Math.round(totalRAM / active) : 0
       };
     } catch (error) {
       console.error('[ResourceControls] Tabs info error:', error);
-      return { tabs: [], total: 0, active: 0, sleeping: 0, totalRAM: 0, averageRAM: 0 };
+      return { tabs: [], total: 0, active: 0, totalRAM: 0, averageRAM: 0 };
     }
   }
 
   /**
-   * Calculate sleep score (0-100, higher = should sleep sooner)
+   * Enhanced RAM estimation
    */
-  calculateSleepScore(tab, inactiveTime, metadata, isActive, isSleeping) {
-    if (isActive || isSleeping) return 0;
-    
-    let score = 50; // Base score
-
-    // Inactivity score (0-30 points)
-    const inactiveMinutes = inactiveTime / 60000;
-    if (inactiveMinutes > 60) score += 30;
-    else if (inactiveMinutes > 30) score += 20;
-    else if (inactiveMinutes > 15) score += 10;
-    else if (inactiveMinutes > 5) score += 5;
-
-    // Metadata score (-20 to +20 points)
-    if (metadata) {
-      // Low activation = higher score
-      if (metadata.activationCount < 3) score += 15;
-      else if (metadata.activationCount < 10) score += 5;
-      else if (metadata.activationCount > 30) score -= 15;
-      
-      // Recently slept = lower score
-      if (metadata.lastSleepTime) {
-        const timeSinceSleep = Date.now() - metadata.lastSleepTime;
-        if (timeSinceSleep < 300000) score -= 20; // 5 minutes
-      }
-    }
-
-    // URL-based score (-15 to +15 points)
-    try {
-      const url = new URL(tab.url);
-      const hostname = url.hostname;
-      
-      // Important sites = lower score
-      if (/gmail|docs\.google|drive|calendar|notion|slack/.test(hostname)) {
-        score -= 15;
-      }
-      
-      // Social/entertainment = higher score
-      if (/facebook|twitter|instagram|tiktok|youtube|netflix/.test(hostname)) {
-        score += 10;
-      }
-      
-      // News sites = higher score
-      if (/news|blog|medium|reddit/.test(hostname)) {
-        score += 5;
-      }
-    } catch (e) {
-      // Invalid URL
-    }
-
-    return Math.max(0, Math.min(100, Math.round(score)));
-  }
-
-  /**
-   * Enhanced RAM estimation with ML-inspired factors
-   */
-  estimateTabRAM(tab, isActive, isSleeping, inactiveTime, metadata) {
-    if (isSleeping) return 0;
-
+  estimateTabRAM(tab, isActive, inactiveTime, metadata) {
     let baseRAM = 100;
     
     // Active tab premium
@@ -408,13 +330,9 @@ class ResourceControls {
   }
 
   /**
-   * Advanced check and sleep with ML-inspired decisions
+   * Monitor RAM and collect stats
    */
-  async checkAndSleepTabs() {
-    if (!this.config.autoSleep) {
-      return { slept: 0, reason: 'Auto sleep disabled' };
-    }
-
+  async monitorRAM() {
     const startTime = Date.now();
     this.stats.checksPerformed++;
 
@@ -425,81 +343,7 @@ class ResourceControls {
       ]);
       
       if (!memoryInfo) {
-        return { slept: 0, reason: 'No memory info' };
-      }
-
-      // Calculate dynamic thresholds
-      const sleepTimerMs = Math.max(
-        this.config.sleepTimer * 60 * 1000,
-        this.config.minInactiveTime
-      );
-
-      const effectiveSleepTimer = this.calculateEffectiveSleepTimer(
-        sleepTimerMs,
-        memoryInfo.usagePercent
-      );
-
-      // Filter and score candidates
-      const candidates = tabsInfo.tabs
-        .filter(tab => this.isValidSleepCandidate(tab))
-        .map(tab => ({
-          ...tab,
-          shouldSleep: this.shouldTabSleep(tab, effectiveSleepTimer, memoryInfo.usagePercent)
-        }))
-        .filter(tab => tab.shouldSleep)
-        .sort((a, b) => b.sleepScore - a.sleepScore); // Highest score first
-
-      // Determine how many to sleep based on RAM status
-      let targetCount = candidates.length;
-      if (memoryInfo.status === 'critical') {
-        targetCount = Math.ceil(candidates.length * 0.8); // 80%
-      } else if (memoryInfo.status === 'warning') {
-        targetCount = Math.ceil(candidates.length * 0.6); // 60%
-      } else if (memoryInfo.status === 'elevated') {
-        targetCount = Math.ceil(candidates.length * 0.4); // 40%
-      } else {
-        targetCount = Math.ceil(candidates.length * 0.3); // 30%
-      }
-
-      const toSleep = candidates.slice(0, targetCount);
-
-      // Sleep tabs
-      let sleptCount = 0;
-      const now = Date.now();
-
-      for (const tab of toSleep) {
-        try {
-          await chrome.tabs.discard(tab.id);
-          sleptCount++;
-          
-          // Update metadata
-          const metadata = this.tabMetadata.get(tab.id);
-          if (metadata) {
-            metadata.lastSleepTime = now;
-            metadata.sleepCount++;
-            this.tabMetadata.set(tab.id, metadata);
-          }
-          
-          this.sleepHistory.set(tab.id, now);
-          
-          console.log(`[ResourceControls] Slept: "${tab.title}" (score: ${tab.sleepScore}, inactive: ${tab.inactiveMinutes}m)`);
-        } catch (error) {
-          console.error(`[ResourceControls] Sleep failed:`, error);
-        }
-      }
-
-      // Emergency sleep if critical
-      if (this.config.aggressiveMode && memoryInfo.status === 'critical') {
-        const emergencyCount = await this.emergencySleep(tabsInfo.tabs, sleptCount);
-        sleptCount += emergencyCount;
-        if (emergencyCount > 0) {
-          this.stats.emergencySleeps++;
-        }
-      }
-
-      // Update stats
-      if (sleptCount > 0) {
-        await this.updateStats(sleptCount);
+        return { success: false, reason: 'No memory info' };
       }
 
       // Track performance
@@ -515,104 +359,15 @@ class ResourceControls {
       }
 
       return {
-        slept: sleptCount,
-        checked: tabsInfo.total,
-        candidates: candidates.length,
-        memory: memoryInfo.usagePercent,
-        status: memoryInfo.status,
-        effectiveTimer: Math.round(effectiveSleepTimer / 60000),
+        success: true,
+        memory: memoryInfo,
+        tabs: tabsInfo,
         checkTime
       };
     } catch (error) {
-      console.error('[ResourceControls] Check error:', error);
-      return { slept: 0, reason: 'Error: ' + error.message };
+      console.error('[ResourceControls] Monitor error:', error);
+      return { success: false, reason: 'Error: ' + error.message };
     }
-  }
-
-  /**
-   * Check if tab is valid sleep candidate
-   */
-  isValidSleepCandidate(tab) {
-    return !tab.isActive && 
-           !tab.isSleeping && 
-           !tab.audible && 
-           !this.isSystemPage(tab.url);
-  }
-
-  /**
-   * Calculate effective sleep timer with smooth scaling
-   */
-  calculateEffectiveSleepTimer(baseTimer, usagePercent) {
-    if (!this.config.aggressiveMode) {
-      return baseTimer;
-    }
-
-    // Smooth exponential scaling
-    if (usagePercent > 85) return baseTimer * 0.2;
-    if (usagePercent > 80) return baseTimer * 0.3;
-    if (usagePercent > 75) return baseTimer * 0.5;
-    if (usagePercent > 70) return baseTimer * 0.6;
-    if (usagePercent > 65) return baseTimer * 0.7;
-    if (usagePercent > 60) return baseTimer * 0.8;
-    if (usagePercent > 55) return baseTimer * 0.9;
-    
-    return baseTimer;
-  }
-
-  /**
-   * Enhanced should sleep decision
-   */
-  shouldTabSleep(tab, effectiveSleepTimer, usagePercent) {
-    // Time check
-    if (tab.inactiveTime < effectiveSleepTimer) {
-      return false;
-    }
-
-    // Metadata checks
-    if (tab.metadata) {
-      // New tabs grace period
-      const age = Date.now() - tab.metadata.createdAt;
-      if (age < 180000) return false; // 3 minutes
-
-      // Frequent tabs protection
-      if (tab.metadata.activationCount > 30) {
-        return tab.inactiveTime > effectiveSleepTimer * 2;
-      }
-      if (tab.metadata.activationCount > 15) {
-        return tab.inactiveTime > effectiveSleepTimer * 1.5;
-      }
-    }
-
-    // Critical RAM = aggressive
-    if (usagePercent > 85) return true;
-
-    // Score-based decision
-    return tab.sleepScore > 60;
-  }
-
-  /**
-   * Emergency sleep with smart selection
-   */
-  async emergencySleep(tabs, alreadySlept) {
-    const candidates = tabs
-      .filter(t => !t.isSleeping && !t.isActive && !t.audible && !this.isSystemPage(t.url))
-      .sort((a, b) => b.sleepScore - a.sleepScore);
-
-    const targetCount = Math.ceil(candidates.length * 0.7);
-    const toSleep = Math.max(0, targetCount - alreadySlept);
-    
-    let sleptCount = 0;
-    for (let i = 0; i < toSleep && i < candidates.length; i++) {
-      try {
-        await chrome.tabs.discard(candidates[i].id);
-        sleptCount++;
-        console.log(`[ResourceControls] EMERGENCY SLEEP: "${candidates[i].title}"`);
-      } catch (error) {
-        // Continue on error
-      }
-    }
-
-    return sleptCount;
   }
 
   /**
@@ -672,8 +427,6 @@ class ResourceControls {
         createdAt: now,
         activationCount: 0,
         totalActiveTime: 0,
-        lastSleepTime: null,
-        sleepCount: 0,
         domain: 'unknown',
         category: 'general'
       };
@@ -692,7 +445,6 @@ class ResourceControls {
   removeTab(tabId) {
     this.tabActivityTimes.delete(tabId);
     this.tabMetadata.delete(tabId);
-    this.sleepHistory.delete(tabId);
     this.saveTabData();
   }
 
@@ -717,57 +469,104 @@ class ResourceControls {
   }
 
   /**
-   * Wake tab
-   */
-  async wakeTab(tabId) {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.discarded) {
-        await chrome.tabs.reload(tabId);
-        console.log(`[ResourceControls] Woke tab ${tabId}`);
-      }
-      this.updateTabActivity(tabId);
-    } catch (error) {
-      console.error(`[ResourceControls] Wake error:`, error);
-    }
-  }
-
-  /**
    * Get comprehensive stats
    */
   async getStats() {
-    const stored = await chrome.storage.local.get(['totalTabsSlept', 'lastSleepTime']);
     const memoryInfo = await this.getMemoryInfo();
     const tabsInfo = await this.getTabsInfo();
 
     return {
       memory: memoryInfo,
       tabs: tabsInfo,
-      totalTabsSlept: stored.totalTabsSlept || 0,
-      lastSleepTime: stored.lastSleepTime || null,
       config: this.config,
       trackedTabs: this.tabActivityTimes.size,
       performance: {
         checksPerformed: this.stats.checksPerformed,
         averageCheckTime: this.stats.averageCheckTime,
         lastCheckTime: this.stats.lastCheckTime,
-        emergencySleeps: this.stats.emergencySleeps
+        peakMemoryUsage: this.stats.peakMemoryUsage,
+        averageMemoryUsage: Math.round(this.stats.averageMemoryUsage)
       }
     };
   }
 
   /**
-   * Update statistics
+   * Get RAM analysis
    */
-  async updateStats(sleptCount) {
-    const stats = await chrome.storage.local.get(['totalTabsSlept']);
-    const total = (stats.totalTabsSlept || 0) + sleptCount;
-    this.stats.totalSlept = total;
-    
-    await chrome.storage.local.set({ 
-      totalTabsSlept: total,
-      lastSleepTime: Date.now()
-    });
+  async getRAMAnalysis() {
+    const stats = await this.getStats();
+    const { memory, tabs } = stats;
+
+    // Category breakdown
+    const categoryRAM = {};
+    const domainRAM = {};
+
+    for (const tab of tabs.tabs) {
+      const category = tab.metadata?.category || 'unknown';
+      const domain = tab.metadata?.domain || 'unknown';
+
+      categoryRAM[category] = (categoryRAM[category] || 0) + tab.estimatedRAM;
+      domainRAM[domain] = (domainRAM[domain] || 0) + tab.estimatedRAM;
+    }
+
+    // Top consumers
+    const topCategories = Object.entries(categoryRAM)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([category, ram]) => ({ category, ram }));
+
+    const topDomains = Object.entries(domainRAM)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([domain, ram]) => ({ domain, ram }));
+
+    return {
+      memory,
+      totalTabs: tabs.total,
+      totalRAM: tabs.totalRAM,
+      averageRAM: tabs.averageRAM,
+      topCategories,
+      topDomains,
+      recommendations: this.getRecommendations(memory, tabs)
+    };
+  }
+
+  /**
+   * Get recommendations based on RAM usage
+   */
+  getRecommendations(memory, tabs) {
+    const recommendations = [];
+
+    if (memory.usagePercent > 85) {
+      recommendations.push({
+        level: 'critical',
+        message: 'RAM usage is critical. Consider closing some tabs.'
+      });
+    } else if (memory.usagePercent > 70) {
+      recommendations.push({
+        level: 'warning',
+        message: 'RAM usage is high. Monitor active tabs.'
+      });
+    }
+
+    // Find heavy tabs
+    const heavyTabs = tabs.tabs
+      .filter(t => t.estimatedRAM > 200)
+      .sort((a, b) => b.estimatedRAM - a.estimatedRAM)
+      .slice(0, 5);
+
+    if (heavyTabs.length > 0) {
+      recommendations.push({
+        level: 'info',
+        message: `${heavyTabs.length} tabs using >200MB RAM`,
+        tabs: heavyTabs.map(t => ({
+          title: t.title,
+          ram: t.estimatedRAM
+        }))
+      });
+    }
+
+    return recommendations;
   }
 
   /**
@@ -776,18 +575,13 @@ class ResourceControls {
   async resetStats() {
     this.stats = {
       checksPerformed: 0,
-      totalSlept: 0,
-      emergencySleeps: 0,
       averageCheckTime: 0,
-      lastCheckTime: 0
+      lastCheckTime: 0,
+      peakMemoryUsage: 0,
+      averageMemoryUsage: 0
     };
     
-    await chrome.storage.local.set({
-      totalTabsSlept: 0,
-      lastSleepTime: null,
-      stats: this.stats
-    });
-    
+    await chrome.storage.local.set({ stats: this.stats });
     console.log('[ResourceControls] Stats reset');
   }
 }

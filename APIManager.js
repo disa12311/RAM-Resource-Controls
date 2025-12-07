@@ -1,6 +1,7 @@
 /**
  * APIManager - External API for other extensions
  * RESTful endpoints, authentication, rate limiting
+ * Standalone version - không phụ thuộc ResourceControls
  */
 
 class APIManager {
@@ -55,65 +56,61 @@ class APIManager {
    * Setup endpoints
    */
   setupEndpoints() {
-    // GET /stats - Get statistics
-    this.addEndpoint('GET', '/stats', async (req) => {
+    // GET /health - Health check
+    this.addEndpoint('GET', '/health', async (req) => {
       return {
         success: true,
-        data: await this.getStats()
+        data: {
+          status: 'healthy',
+          timestamp: Date.now(),
+          version: '3.0.0'
+        }
       };
     });
 
-    // POST /sleep - Sleep tabs
-    this.addEndpoint('POST', '/sleep', async (req) => {
-      const { tabIds } = req.body || {};
+    // GET /info - Get extension info
+    this.addEndpoint('GET', '/info', async (req) => {
       return {
         success: true,
-        data: await this.sleepTabs(tabIds)
+        data: {
+          name: 'Extension API Manager',
+          version: '3.0.0',
+          apiKeys: this.apiKeys.size,
+          webhooks: this.webhooks.size
+        }
       };
     });
 
-    // POST /wake - Wake tabs
-    this.addEndpoint('POST', '/wake', async (req) => {
-      const { tabIds } = req.body || {};
+    // POST /webhook/trigger - Trigger a test webhook
+    this.addEndpoint('POST', '/webhook/trigger', async (req) => {
+      const { event, data } = req.body || {};
+      await this.triggerWebhooks(event || 'test', data || {});
       return {
         success: true,
-        data: await this.wakeTabs(tabIds)
+        data: { triggered: true }
       };
     });
 
-    // GET /tabs - Get tabs info
-    this.addEndpoint('GET', '/tabs', async (req) => {
-      return {
-        success: true,
-        data: await this.getTabsInfo()
-      };
+    // GET /storage - Get storage data
+    this.addEndpoint('GET', '/storage', async (req) => {
+      const { key } = req.body || {};
+      if (key) {
+        const data = await chrome.storage.local.get(key);
+        return { success: true, data: data[key] };
+      } else {
+        const data = await chrome.storage.local.get(null);
+        return { success: true, data };
+      }
     });
 
-    // PUT /config - Update config
-    this.addEndpoint('PUT', '/config', async (req) => {
-      const { config } = req.body || {};
-      return {
-        success: true,
-        data: await this.updateConfig(config)
-      };
-    });
-
-    // POST /whitelist - Add to whitelist
-    this.addEndpoint('POST', '/whitelist', async (req) => {
-      const { domain } = req.body || {};
-      return {
-        success: true,
-        data: await this.addToWhitelist(domain)
-      };
-    });
-
-    // DELETE /whitelist - Remove from whitelist
-    this.addEndpoint('DELETE', '/whitelist', async (req) => {
-      const { domain } = req.body || {};
-      return {
-        success: true,
-        data: await this.removeFromWhitelist(domain)
-      };
+    // POST /storage - Set storage data
+    this.addEndpoint('POST', '/storage', async (req) => {
+      const { key, value } = req.body || {};
+      if (!key) {
+        return { success: false, error: 'Key required' };
+      }
+      await chrome.storage.local.set({ [key]: value });
+      return { success: true, data: { key, value } };
     });
   }
 
@@ -190,7 +187,7 @@ class APIManager {
    * Generate API key
    */
   async generateApiKey(name, permissions = []) {
-    const key = 'rc_' + this.randomString(32);
+    const key = 'ext_' + this.randomString(32);
     
     const keyData = {
       name,
@@ -343,45 +340,61 @@ class APIManager {
    */
   getDocumentation() {
     return {
-      version: '2.0.0',
+      version: '3.0.0',
       baseUrl: 'chrome-extension://' + chrome.runtime.id,
       authentication: 'API Key in request body',
       endpoints: [
         {
           method: 'GET',
-          path: '/stats',
-          description: 'Get extension statistics',
-          authentication: true
-        },
-        {
-          method: 'POST',
-          path: '/sleep',
-          description: 'Sleep specific tabs',
-          body: { tabIds: 'array of tab IDs' },
-          authentication: true
-        },
-        {
-          method: 'POST',
-          path: '/wake',
-          description: 'Wake sleeping tabs',
-          body: { tabIds: 'array of tab IDs' },
+          path: '/health',
+          description: 'Health check endpoint',
           authentication: true
         },
         {
           method: 'GET',
-          path: '/tabs',
-          description: 'Get all tabs information',
+          path: '/info',
+          description: 'Get extension information',
           authentication: true
         },
         {
-          method: 'PUT',
-          path: '/config',
-          description: 'Update configuration',
-          body: { config: 'config object' },
+          method: 'POST',
+          path: '/webhook/trigger',
+          description: 'Trigger a test webhook',
+          body: { event: 'string', data: 'object' },
+          authentication: true
+        },
+        {
+          method: 'GET',
+          path: '/storage',
+          description: 'Get storage data',
+          body: { key: 'string (optional)' },
+          authentication: true
+        },
+        {
+          method: 'POST',
+          path: '/storage',
+          description: 'Set storage data',
+          body: { key: 'string', value: 'any' },
           authentication: true
         }
       ],
-      rateLimit: '100 requests/hour per API key'
+      rateLimit: '100 requests/hour per API key',
+      exampleUsage: {
+        javascript: `
+// Example: Call API from another extension
+chrome.runtime.sendMessage(
+  'YOUR_EXTENSION_ID',
+  {
+    apiKey: 'your-api-key',
+    method: 'GET',
+    path: '/health',
+    body: {}
+  },
+  (response) => {
+    console.log(response);
+  }
+);`
+      }
     };
   }
 
@@ -421,39 +434,9 @@ class APIManager {
       name: k.name,
       key: k.key.substring(0, 10) + '...',
       createdAt: k.createdAt,
-      enabled: k.enabled
+      enabled: k.enabled,
+      rateLimit: k.rateLimit
     }));
-  }
-
-  /**
-   * Placeholder methods - will be connected to ResourceControls
-   */
-  async getStats() {
-    return chrome.runtime.sendMessage({ action: 'getStats' });
-  }
-
-  async sleepTabs(tabIds) {
-    return chrome.runtime.sendMessage({ action: 'sleepTabs', tabIds });
-  }
-
-  async wakeTabs(tabIds) {
-    return chrome.runtime.sendMessage({ action: 'wakeTabs', tabIds });
-  }
-
-  async getTabsInfo() {
-    return chrome.runtime.sendMessage({ action: 'getTabsInfo' });
-  }
-
-  async updateConfig(config) {
-    return chrome.runtime.sendMessage({ action: 'updateSettings', settings: config });
-  }
-
-  async addToWhitelist(domain) {
-    return chrome.runtime.sendMessage({ action: 'addToWhitelist', domain });
-  }
-
-  async removeFromWhitelist(domain) {
-    return chrome.runtime.sendMessage({ action: 'removeFromWhitelist', domain });
   }
 }
 

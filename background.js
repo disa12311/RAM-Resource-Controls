@@ -1,78 +1,57 @@
 /**
- * Background Service Worker - Advanced v2.0
- * Multi-threading, ML, Whitelist, Privacy, API
+ * Background Service Worker v3.0
+ * RAM Monitoring + API Manager + Whitelist + Privacy
  */
 
 importScripts('ResourceControls.js');
-importScripts('WorkerManager.js');
 importScripts('WhitelistManager.js');
 importScripts('PrivacyManager.js');
 importScripts('APIManager.js');
 
 // Global instances
 let resourceControls = null;
-let workerManager = null;
 let whitelistManager = null;
 let privacyManager = null;
 let apiManager = null;
 
-let monitoringAlarm = 'resourceMonitor';
+let monitoringAlarm = 'ramMonitor';
 let keepAliveInterval = null;
 
-// Service Worker Keep-Alive Strategy
+// Service Worker Keep-Alive
 function setupKeepAlive() {
-  // Keep service worker alive
   keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo(() => {
       // Ping to keep alive
     });
-  }, 20000); // Every 20 seconds
+  }, 20000);
 }
 
-// Khởi tạo extension
+// Initialize extension
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('[Background] RAM Resource Controls v2.0 initializing...');
+  console.log('[Background] Extension v3.0 initializing...');
   
   await initializeManagers();
   
   // Setup context menus
   setupContextMenus();
   
-  // Setup alarms
+  // Setup RAM monitoring alarm
   chrome.alarms.create(monitoringAlarm, { 
     periodInMinutes: 1,
     delayInMinutes: 0
   });
   
-  // Initialize badge
-  updateBadge();
+  console.log('[Background] Initialization complete');
   
-  // Show welcome message in console (no notification)
   if (details.reason === 'install') {
     console.log('[Background] Welcome! Extension installed successfully.');
-    console.log('[Background] Right-click on tabs for quick actions.');
-    console.log('[Background] Use Ctrl+Shift+S to sleep current tab.');
-    
-    // Set initial badge
-    chrome.action.setBadgeBackgroundColor({ color: '#0078d4' });
-    chrome.action.setBadgeText({ text: 'NEW' });
-    
-    // Clear "NEW" after 10 seconds
-    setTimeout(() => {
-      updateBadge();
-    }, 10000);
   }
-  
-  console.log('[Background] Initialization complete');
 });
 
 // Initialize all managers
 async function initializeManagers() {
   resourceControls = new ResourceControls();
   await resourceControls.initialize();
-  
-  workerManager = new WorkerManager();
-  await workerManager.initialize();
   
   whitelistManager = new WhitelistManager();
   await whitelistManager.initialize();
@@ -96,20 +75,14 @@ async function initializeManagers() {
 function setupContextMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
-      id: 'sleep-tab',
-      title: 'Sleep This Tab',
+      id: 'check-ram',
+      title: 'Check RAM Usage',
       contexts: ['page']
     });
 
     chrome.contextMenus.create({
-      id: 'never-sleep',
-      title: 'Never Sleep This Domain',
-      contexts: ['page']
-    });
-
-    chrome.contextMenus.create({
-      id: 'always-sleep',
-      title: 'Always Sleep This Domain',
+      id: 'never-track',
+      title: 'Don\'t Track This Domain',
       contexts: ['page']
     });
 
@@ -120,8 +93,8 @@ function setupContextMenus() {
     });
 
     chrome.contextMenus.create({
-      id: 'wake-all',
-      title: 'Wake All Sleeping Tabs',
+      id: 'view-stats',
+      title: 'View RAM Statistics',
       contexts: ['page']
     });
   });
@@ -134,70 +107,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const domain = new URL(url).hostname;
 
     switch (info.menuItemId) {
-      case 'sleep-tab':
-        await chrome.tabs.discard(tab.id);
-        updateBadge('Sleeping...', '#ff8c00');
-        setTimeout(() => updateBadge(), 2000);
+      case 'check-ram':
+        const ramInfo = await resourceControls.getMemoryInfo();
+        console.log('[Background] RAM Usage:', ramInfo);
         break;
 
-      case 'never-sleep':
+      case 'never-track':
         await whitelistManager.addToWhitelist(domain);
-        updateBadge('Added', '#107c10');
-        setTimeout(() => updateBadge(), 2000);
+        console.log('[Background] Added to whitelist:', domain);
         break;
 
-      case 'always-sleep':
-        await whitelistManager.addToBlacklist(domain);
-        updateBadge('Added', '#d13438');
-        setTimeout(() => updateBadge(), 2000);
-        break;
-
-      case 'wake-all':
-        const tabs = await chrome.tabs.query({ discarded: true });
-        for (const t of tabs) {
-          await chrome.tabs.reload(t.id);
-        }
-        updateBadge(`${tabs.length}`, '#107c10');
-        setTimeout(() => updateBadge(), 3000);
+      case 'view-stats':
+        const stats = await resourceControls.getStats();
+        console.log('[Background] Stats:', stats);
         break;
     }
   } catch (error) {
     console.error('[Background] Context menu error:', error);
-  }
-});
-
-// Keyboard shortcuts
-chrome.commands.onCommand.addListener(async (command) => {
-  try {
-    switch (command) {
-      case 'sleep-current-tab':
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTab) {
-          await chrome.tabs.discard(activeTab.id);
-          updateBadge('Slept', '#0078d4');
-          setTimeout(() => updateBadge(), 2000);
-        }
-        break;
-
-      case 'wake-all-tabs':
-        const sleepingTabs = await chrome.tabs.query({ discarded: true });
-        for (const tab of sleepingTabs) {
-          await chrome.tabs.reload(tab.id);
-        }
-        updateBadge(`${sleepingTabs.length}`, '#107c10');
-        setTimeout(() => updateBadge(), 3000);
-        break;
-
-      case 'toggle-auto-sleep':
-        const config = resourceControls.config;
-        const newState = !config.autoSleep;
-        await resourceControls.updateConfig({ autoSleep: newState });
-        updateBadge(newState ? 'ON' : 'OFF', newState ? '#107c10' : '#999');
-        setTimeout(() => updateBadge(), 3000);
-        break;
-    }
-  } catch (error) {
-    console.error('[Background] Command error:', error);
   }
 });
 
@@ -210,12 +136,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleMessage(request, sender, sendResponse) {
   try {
     switch (request.action) {
+      // Resource Controls
       case 'updateSettings':
         await resourceControls.updateConfig(request.settings);
-        if (request.settings.autoSleep) {
-          const result = await checkAndSleepTabsWithML();
-          console.log('[Background] Check result:', result);
-        }
         sendResponse({ success: true });
         break;
 
@@ -229,8 +152,13 @@ async function handleMessage(request, sender, sendResponse) {
         });
         break;
 
-      case 'forceSleep':
-        const result = await checkAndSleepTabsWithML();
+      case 'getRAMAnalysis':
+        const analysis = await resourceControls.getRAMAnalysis();
+        sendResponse({ success: true, data: analysis });
+        break;
+
+      case 'monitorRAM':
+        const result = await resourceControls.monitorRAM();
         sendResponse({ success: true, data: result });
         break;
 
@@ -283,13 +211,28 @@ async function handleMessage(request, sender, sendResponse) {
 
       // API management
       case 'generateApiKey':
-        const apiKey = await apiManager.generateApiKey(request.name);
+        const apiKey = await apiManager.generateApiKey(request.name, request.permissions);
         sendResponse({ success: true, data: apiKey });
+        break;
+
+      case 'revokeApiKey':
+        const revoked = await apiManager.revokeApiKey(request.key);
+        sendResponse({ success: true, data: revoked });
         break;
 
       case 'getApiKeys':
         const keys = apiManager.getApiKeys();
         sendResponse({ success: true, data: keys });
+        break;
+
+      case 'setApiEnabled':
+        const enabled = await apiManager.setApiEnabled(request.enabled);
+        sendResponse({ success: true, data: enabled });
+        break;
+
+      case 'getDocumentation':
+        const docs = apiManager.getDocumentation();
+        sendResponse({ success: true, data: docs });
         break;
 
       default:
@@ -301,99 +244,21 @@ async function handleMessage(request, sender, sendResponse) {
   }
 }
 
-// Enhanced check with ML
-async function checkAndSleepTabsWithML() {
-  if (!resourceControls.config.autoSleep) {
-    return { slept: 0, reason: 'Auto sleep disabled' };
-  }
-
-  try {
-    const tabsInfo = await resourceControls.getTabsInfo();
-    const memoryInfo = await resourceControls.getMemoryInfo();
-
-    // Analyze patterns with ML worker
-    const patterns = await workerManager.analyzeTabPatterns(tabsInfo.tabs);
-
-    const sleepTimerMs = resourceControls.config.sleepTimer * 60 * 1000;
-    const tabsToSleep = [];
-
-    for (const tab of tabsInfo.tabs) {
-      // Skip active, sleeping, audible tabs
-      if (tab.isActive || tab.isSleeping || tab.audible) continue;
-      
-      // Skip system pages
-      if (tab.url.startsWith('chrome://') || 
-          tab.url.startsWith('chrome-extension://')) continue;
-
-      // Check whitelist/blacklist
-      const sleepPriority = whitelistManager.getSleepPriority(tab.url);
-      if (sleepPriority === 0) continue; // Whitelisted - never sleep
-
-      // Calculate optimal sleep time with ML
-      const optimalTime = await workerManager.calculateOptimalSleepTime(
-        tab, 
-        patterns, 
-        sleepTimerMs
-      );
-
-      // Blacklist → sleep immediately
-      if (sleepPriority === 2) {
-        tabsToSleep.push(tab);
-        continue;
-      }
-
-      // Normal tabs → check optimal time
-      if (tab.inactiveTime > optimalTime) {
-        tabsToSleep.push(tab);
-      }
-    }
-
-    // Sleep tabs
-    let sleptCount = 0;
-    for (const tab of tabsToSleep) {
-      try {
-        await chrome.tabs.discard(tab.id);
-        sleptCount++;
-        console.log(`[Background] Slept: "${tab.title}"`);
-      } catch (error) {
-        console.error(`[Background] Cannot sleep tab ${tab.id}:`, error);
-      }
-    }
-
-    // Update stats
-    if (sleptCount > 0) {
-      const stats = await chrome.storage.local.get(['totalTabsSlept']);
-      await chrome.storage.local.set({ 
-        totalTabsSlept: (stats.totalTabsSlept || 0) + sleptCount,
-        lastSleepTime: Date.now()
-      });
-
-      // Show notification if significant
-      if (sleptCount >= 5) {
-        updateBadge(sleptCount.toString(), '#0078d4');
-        console.log(`[Background] Badge updated: ${sleptCount} tabs optimized`);
-      }
-    }
-
-    return { slept: sleptCount, checked: tabsInfo.total };
-
-  } catch (error) {
-    console.error('[Background] ML check error:', error);
-    return { slept: 0, reason: 'Error occurred' };
-  }
-}
-
-// Alarm handler
+// RAM monitoring alarm
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === monitoringAlarm) {
     try {
-      const result = await checkAndSleepTabsWithML();
-      if (result.slept > 0) {
-        console.log(`[Background] Auto-slept ${result.slept} tabs`);
-        updateBadge(); // Update badge with new total
+      const result = await resourceControls.monitorRAM();
+      if (result.success) {
+        const { memory } = result;
+        
+        // Log if critical
+        if (memory.status === 'critical') {
+          console.warn('[Background] CRITICAL RAM:', memory.usagePercent + '%');
+        }
       }
     } catch (error) {
-      console.error('[Background] Alarm error:', error);
+      console.error('[Background] Monitoring error:', error);
     }
   }
 });
@@ -401,7 +266,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // Tab events
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   resourceControls.updateTabActivity(activeInfo.tabId);
-  await resourceControls.wakeTab(activeInfo.tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -417,7 +281,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Export all data
 async function exportAllData() {
   const data = {
-    version: '2.0.0',
+    version: '3.0.0',
     timestamp: Date.now(),
     config: resourceControls.config,
     stats: await resourceControls.getStats(),
@@ -453,48 +317,14 @@ async function importAllData(dataStr) {
   console.log('[Background] Data imported successfully');
 }
 
-// Show notification helper
-function showNotification(title, message) {
-  // Deprecated - use updateBadge() instead
-  console.log(`[Background] ${title}: ${message}`);
-}
-
-// Update badge with stats
-async function updateBadge(text, color) {
-  try {
-    // If no text provided, show total slept count
-    if (!text) {
-      const stats = await chrome.storage.local.get(['totalTabsSlept']);
-      const count = stats.totalTabsSlept || 0;
-      
-      if (count > 0) {
-        text = count > 99 ? '99+' : count.toString();
-        color = '#0078d4';
-      } else {
-        text = '';
-        color = '#999';
-      }
-    }
-    
-    // Set badge
-    await chrome.action.setBadgeText({ text: text });
-    if (color) {
-      await chrome.action.setBadgeBackgroundColor({ color: color });
-    }
-    
-  } catch (error) {
-    console.error('[Background] Badge error:', error);
-  }
-}
-
 // Cleanup on unload
 self.addEventListener('unload', async () => {
   if (resourceControls) {
-    await resourceControls.saveTabActivityTimes();
+    await resourceControls.saveTabData();
   }
   if (keepAliveInterval) {
     clearInterval(keepAliveInterval);
   }
 });
 
-console.log('[Background] Service Worker v2.0 loaded');
+console.log('[Background] Service Worker v3.0 loaded');

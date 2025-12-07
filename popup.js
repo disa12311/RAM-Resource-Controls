@@ -1,76 +1,62 @@
 /**
- * Popup Controller - Ultra Optimized
- * Zero memory leaks, minimal DOM operations
+ * Popup Controller - RAM Monitor
  */
 
 class PopupController {
   constructor() {
-    // State management
     this.state = {
       isLoading: false,
-      isApplying: false,
       lastUpdate: 0,
-      updateThrottle: 1000 // 1 giây throttle
+      updateThrottle: 2000
     };
     
-    // References cache
     this.refs = {};
-    
-    // Timers
     this.updateTimer = null;
     this.toastTimer = null;
     
-    // Bound methods để tránh tạo function mới
+    // Bound methods
     this.boundUpdateStats = this.updateStats.bind(this);
     this.boundApplySettings = this.applySettings.bind(this);
-    this.boundSleepNow = this.sleepNow.bind(this);
+    this.boundCheckNow = this.checkNow.bind(this);
     this.boundResetStats = this.resetStats.bind(this);
-    this.boundHandleCheckboxGroup = this.handleCheckboxGroup.bind(this);
   }
 
   /**
-   * Khởi tạo - Cache DOM references
+   * Initialize
    */
   async init() {
-    // Cache tất cả DOM references một lần
     this.cacheReferences();
-    
-    // Load và render
     await this.loadAndRender();
-    
-    // Bind events
     this.bindEvents();
-    
-    // Start auto-update với throttle
     this.startAutoUpdate();
   }
 
   /**
-   * Cache tất cả DOM references
+   * Cache DOM references
    */
   cacheReferences() {
     this.refs = {
+      // RAM Card
+      ramUsage: document.getElementById('ramUsage'),
+      ramStatus: document.getElementById('ramStatus'),
+      ramBarFill: document.getElementById('ramBarFill'),
+      usedRAM: document.getElementById('usedRAM'),
+      availableRAM: document.getElementById('availableRAM'),
+      
       // Stats
-      statusIndicator: document.getElementById('statusIndicator'),
-      statusText: document.getElementById('statusText'),
-      totalTabsSlept: document.getElementById('totalTabsSlept'),
-      activeTabsCount: document.getElementById('activeTabsCount'),
+      totalTabs: document.getElementById('totalTabs'),
+      totalTabRAM: document.getElementById('totalTabRAM'),
+      avgTabRAM: document.getElementById('avgTabRAM'),
+      peakRAM: document.getElementById('peakRAM'),
       
-      // Inputs
+      // Top Consumers
+      topConsumers: document.getElementById('topConsumers'),
+      
+      // Controls
       ramLimit: document.getElementById('ramLimit'),
-      sleepTimer: document.getElementById('sleepTimer'),
-      autoSleep: document.getElementById('autoSleep'),
-      aggressiveMode: document.getElementById('aggressiveMode'),
-      
-      // Buttons
       applySettings: document.getElementById('applySettings'),
-      applyText: document.getElementById('applyText'),
-      sleepNow: document.getElementById('sleepNow'),
+      checkNow: document.getElementById('checkNow'),
       resetStats: document.getElementById('resetStats'),
-      
-      // Groups
-      autoSleepGroup: document.getElementById('autoSleepGroup'),
-      aggressiveModeGroup: document.getElementById('aggressiveModeGroup'),
       
       // Toast
       toast: document.getElementById('toast')
@@ -78,44 +64,29 @@ class PopupController {
   }
 
   /**
-   * Load settings và render
+   * Load and render
    */
   async loadAndRender() {
     try {
-      // Load settings từ storage
-      const settings = await chrome.storage.local.get([
-        'ramLimit',
-        'sleepTimer',
-        'autoSleep',
-        'aggressiveMode'
-      ]);
-
-      // Update UI một lần
+      // Load settings
+      const settings = await chrome.storage.local.get(['ramLimit']);
       this.refs.ramLimit.value = settings.ramLimit || 2000;
-      this.refs.sleepTimer.value = settings.sleepTimer || 10;
-      this.refs.autoSleep.checked = settings.autoSleep || false;
-      this.refs.aggressiveMode.checked = settings.aggressiveMode || false;
-
-      // Update checkbox group states
-      this.updateCheckboxGroupState('autoSleepGroup', settings.autoSleep);
-      this.updateCheckboxGroupState('aggressiveModeGroup', settings.aggressiveMode);
 
       // Update stats
       await this.updateStats();
       
     } catch (error) {
-      console.error('[Popup] Lỗi load và render:', error);
-      this.showToast('Lỗi tải dữ liệu');
+      console.error('[Popup] Load error:', error);
+      this.showToast('Failed to load data');
     }
   }
 
   /**
-   * Update stats với throttle
+   * Update stats
    */
   async updateStats() {
     const now = Date.now();
     
-    // Throttle updates
     if (now - this.state.lastUpdate < this.state.updateThrottle) {
       return;
     }
@@ -125,148 +96,155 @@ class PopupController {
     this.state.lastUpdate = now;
 
     try {
-      // Gọi background để lấy stats
       const response = await this.sendMessage({ action: 'getStats' });
       
       if (!response.success || !response.data) {
         throw new Error('Failed to get stats');
       }
 
-      const { memory, tabs, totalTabsSlept, config } = response.data;
+      const { memory, tabs, performance } = response.data;
 
-      // Batch DOM updates
-      this.batchUpdateDOM({
-        totalTabsSlept: totalTabsSlept || 0,
-        activeTabsCount: tabs ? tabs.active : 0,
-        statusText: config.autoSleep ? 'Đang hoạt động' : 'Tạm dừng',
-        statusClass: config.autoSleep ? 'active' : 'inactive'
-      });
+      // Update RAM Card
+      this.updateRAMCard(memory);
+      
+      // Update Stats
+      this.updateStatsCards(tabs, performance);
+      
+      // Update Top Consumers
+      await this.updateTopConsumers();
 
     } catch (error) {
-      console.error('[Popup] Lỗi update stats:', error);
-      this.batchUpdateDOM({
-        statusText: 'Lỗi kết nối',
-        statusClass: 'inactive'
-      });
+      console.error('[Popup] Update error:', error);
     } finally {
       this.state.isLoading = false;
     }
   }
 
   /**
-   * Batch update DOM để giảm reflow
+   * Update RAM card
    */
-  batchUpdateDOM(updates) {
-    // Request animation frame để batch updates
-    requestAnimationFrame(() => {
-      if (updates.totalTabsSlept !== undefined) {
-        this.refs.totalTabsSlept.textContent = updates.totalTabsSlept.toLocaleString();
-      }
-      if (updates.activeTabsCount !== undefined) {
-        this.refs.activeTabsCount.textContent = updates.activeTabsCount;
-      }
-      if (updates.statusText !== undefined) {
-        this.refs.statusText.textContent = updates.statusText;
-      }
-      if (updates.statusClass !== undefined) {
-        this.refs.statusIndicator.className = `status-indicator ${updates.statusClass}`;
-      }
-    });
+  updateRAMCard(memory) {
+    if (!memory) return;
+
+    const { usagePercent, usedMB, availableMB, status } = memory;
+
+    // Update values
+    this.refs.ramUsage.textContent = usagePercent + '%';
+    this.refs.usedRAM.textContent = usedMB + ' MB';
+    this.refs.availableRAM.textContent = availableMB + ' MB';
+    this.refs.ramBarFill.style.width = usagePercent + '%';
+
+    // Update status badge
+    this.refs.ramStatus.textContent = status;
+    this.refs.ramStatus.className = 'status-badge status-' + status;
   }
 
   /**
-   * Áp dụng settings
+   * Update stats cards
+   */
+  updateStatsCards(tabs, performance) {
+    if (!tabs) return;
+
+    this.refs.totalTabs.textContent = tabs.total;
+    this.refs.totalTabRAM.textContent = tabs.totalRAM + ' MB';
+    this.refs.avgTabRAM.textContent = tabs.averageRAM + ' MB';
+    
+    if (performance) {
+      this.refs.peakRAM.textContent = Math.round(performance.peakMemoryUsage) + '%';
+    }
+  }
+
+  /**
+   * Update top consumers
+   */
+  async updateTopConsumers() {
+    try {
+      const response = await this.sendMessage({ action: 'getRAMAnalysis' });
+      
+      if (!response.success || !response.data) {
+        return;
+      }
+
+      const { topDomains } = response.data;
+
+      if (!topDomains || topDomains.length === 0) {
+        this.refs.topConsumers.innerHTML = '<div class="empty-state">No data yet</div>';
+        return;
+      }
+
+      this.refs.topConsumers.innerHTML = topDomains
+        .slice(0, 5)
+        .map(item => `
+          <div class="consumer-item">
+            <div class="consumer-name">${item.domain}</div>
+            <div class="consumer-ram">${item.ram} MB</div>
+          </div>
+        `).join('');
+
+    } catch (error) {
+      console.error('[Popup] Top consumers error:', error);
+    }
+  }
+
+  /**
+   * Apply settings
    */
   async applySettings() {
-    if (this.state.isApplying) return;
-    this.state.isApplying = true;
-
     const ramLimit = parseInt(this.refs.ramLimit.value);
-    const sleepTimer = parseInt(this.refs.sleepTimer.value);
-    const autoSleep = this.refs.autoSleep.checked;
-    const aggressiveMode = this.refs.aggressiveMode.checked;
 
-    // Validate
     if (ramLimit < 1000 || ramLimit > 5000) {
-      this.showToast('RAM phải từ 1000-5000 MB');
-      this.state.isApplying = false;
-      return;
-    }
-
-    if (sleepTimer < 1 || sleepTimer > 60) {
-      this.showToast('Thời gian phải từ 1-60 phút');
-      this.state.isApplying = false;
+      this.showToast('RAM limit must be 1000-5000 MB');
       return;
     }
 
     try {
-      // Show loading
-      this.refs.applyText.innerHTML = '<span class="loading-spinner"></span>';
       this.refs.applySettings.disabled = true;
+      this.refs.applySettings.innerHTML = '<span class="loading-spinner"></span> Applying...';
 
-      // Gửi tới background
       await this.sendMessage({
         action: 'updateSettings',
-        settings: { ramLimit, sleepTimer, autoSleep, aggressiveMode }
+        settings: { ramLimit }
       });
 
-      // Update checkbox states
-      this.updateCheckboxGroupState('autoSleepGroup', autoSleep);
-      this.updateCheckboxGroupState('aggressiveModeGroup', aggressiveMode);
-
-      // Show success
-      this.showToast('Đã lưu cài đặt');
-      
-      // Update stats
+      this.showToast('Settings saved');
       await this.updateStats();
 
     } catch (error) {
-      console.error('[Popup] Lỗi áp dụng settings:', error);
-      this.showToast('Lỗi lưu cài đặt');
+      console.error('[Popup] Apply error:', error);
+      this.showToast('Failed to save settings');
     } finally {
-      this.refs.applyText.textContent = 'Áp dụng cài đặt';
       this.refs.applySettings.disabled = false;
-      this.state.isApplying = false;
+      this.refs.applySettings.textContent = 'Apply Settings';
     }
   }
 
   /**
-   * Ngủ tabs ngay lập tức
+   * Check now
    */
-  async sleepNow() {
+  async checkNow() {
     try {
-      this.refs.sleepNow.disabled = true;
-      this.refs.sleepNow.innerHTML = '<span class="loading-spinner"></span> Đang ngủ...';
+      this.refs.checkNow.disabled = true;
+      this.refs.checkNow.innerHTML = '<span class="loading-spinner"></span> Checking...';
 
-      const response = await this.sendMessage({ action: 'forceSleep' });
+      await this.sendMessage({ action: 'monitorRAM' });
       
-      if (response.success && response.data) {
-        const { slept } = response.data;
-        if (slept > 0) {
-          this.showToast(`Đã ngủ ${slept} tabs`);
-          // Update badge via background
-          chrome.runtime.sendMessage({ action: 'updateBadge' });
-        } else {
-          this.showToast('Không có tabs cần ngủ');
-        }
-      }
-
+      this.showToast('RAM check complete');
       await this.updateStats();
-      
+
     } catch (error) {
-      console.error('[Popup] Lỗi sleep now:', error);
-      this.showToast('Lỗi khi ngủ tabs');
+      console.error('[Popup] Check error:', error);
+      this.showToast('Check failed');
     } finally {
-      this.refs.sleepNow.innerHTML = 'Ngủ ngay';
-      this.refs.sleepNow.disabled = false;
+      this.refs.checkNow.disabled = false;
+      this.refs.checkNow.textContent = 'Check Now';
     }
   }
 
   /**
-   * Reset thống kê
+   * Reset stats
    */
   async resetStats() {
-    if (!confirm('Bạn có chắc muốn reset thống kê?')) {
+    if (!confirm('Reset all statistics?')) {
       return;
     }
 
@@ -275,49 +253,21 @@ class PopupController {
       
       await this.sendMessage({ action: 'resetStats' });
       
-      this.showToast('Đã reset thống kê');
+      this.showToast('Statistics reset');
       await this.updateStats();
       
     } catch (error) {
-      console.error('[Popup] Lỗi reset stats:', error);
-      this.showToast('Lỗi reset thống kê');
+      console.error('[Popup] Reset error:', error);
+      this.showToast('Reset failed');
     } finally {
       this.refs.resetStats.disabled = false;
     }
   }
 
   /**
-   * Update checkbox group state
+   * Show toast
    */
-  updateCheckboxGroupState(groupId, isActive) {
-    const group = this.refs[groupId];
-    if (group) {
-      if (isActive) {
-        group.classList.add('active');
-      } else {
-        group.classList.remove('active');
-      }
-    }
-  }
-
-  /**
-   * Handle checkbox group click
-   */
-  handleCheckboxGroup(e, checkboxId, groupId) {
-    if (e.target.tagName !== 'INPUT') {
-      const checkbox = this.refs[checkboxId];
-      checkbox.checked = !checkbox.checked;
-      this.updateCheckboxGroupState(groupId, checkbox.checked);
-    } else {
-      this.updateCheckboxGroupState(groupId, e.target.checked);
-    }
-  }
-
-  /**
-   * Show toast notification
-   */
-  showToast(message, type = 'info') {
-    // Clear existing timer
+  showToast(message) {
     if (this.toastTimer) {
       clearTimeout(this.toastTimer);
     }
@@ -343,10 +293,9 @@ class PopupController {
   }
 
   /**
-   * Start auto-update với debounce
+   * Start auto-update
    */
   startAutoUpdate() {
-    // Clear existing
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
     }
@@ -366,52 +315,28 @@ class PopupController {
   }
 
   /**
-   * Bind tất cả events một lần
+   * Bind events
    */
   bindEvents() {
-    // Buttons
     this.refs.applySettings.addEventListener('click', this.boundApplySettings);
-    this.refs.sleepNow.addEventListener('click', this.boundSleepNow);
+    this.refs.checkNow.addEventListener('click', this.boundCheckNow);
     this.refs.resetStats.addEventListener('click', this.boundResetStats);
-
-    // Checkbox groups
-    this.refs.autoSleepGroup.addEventListener('click', (e) => {
-      this.handleCheckboxGroup(e, 'autoSleep', 'autoSleepGroup');
-    });
-
-    this.refs.aggressiveModeGroup.addEventListener('click', (e) => {
-      this.handleCheckboxGroup(e, 'aggressiveMode', 'aggressiveModeGroup');
-    });
-
-    // Input changes - debounced
-    let inputTimer;
-    const inputs = [this.refs.ramLimit, this.refs.sleepTimer];
-    inputs.forEach(input => {
-      input.addEventListener('input', () => {
-        clearTimeout(inputTimer);
-        inputTimer = setTimeout(() => {
-          // Có thể thêm validation real-time ở đây
-        }, 500);
-      });
-    });
   }
 
   /**
-   * Cleanup - Prevent memory leaks
+   * Cleanup
    */
   cleanup() {
-    // Stop timers
     this.stopAutoUpdate();
+    
     if (this.toastTimer) {
       clearTimeout(this.toastTimer);
     }
 
-    // Remove event listeners
     this.refs.applySettings.removeEventListener('click', this.boundApplySettings);
-    this.refs.sleepNow.removeEventListener('click', this.boundSleepNow);
+    this.refs.checkNow.removeEventListener('click', this.boundCheckNow);
     this.refs.resetStats.removeEventListener('click', this.boundResetStats);
-
-    // Clear references
+    
     this.refs = null;
     this.state = null;
   }
@@ -425,7 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
   popupController.init();
 });
 
-// Cleanup on unload - Prevent memory leaks
 window.addEventListener('unload', () => {
   if (popupController) {
     popupController.cleanup();

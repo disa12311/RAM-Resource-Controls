@@ -1,20 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "RAM Resource Controls",
-  "version": "2.0.0",
-  "description": "Advanced RAM management with AI-powered tab sleeping, whitelist/blacklist, and privacy mode",
+  "name": "RAM Monitor & Manager",
+  "version": "3.0.0",
+  "description": "Real-time RAM monitoring, tab tracking, whitelist/blacklist management, privacy mode, and API access",
   "permissions": [
     "storage",
     "tabs",
     "system.memory",
     "alarms",
-    "offscreen",
-    "contextMenus",
-    "notifications"
-  ],
-  "optional_permissions": [
-    "webNavigation",
-    "history"
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -24,29 +18,6 @@
   },
   "action": {
     "default_popup": "popup.html"
-  },
-  "commands": {
-    "sleep-current-tab": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+S",
-        "mac": "Command+Shift+S"
-      },
-      "description": "Sleep current tab"
-    },
-    "wake-all-tabs": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+W",
-        "mac": "Command+Shift+W"
-      },
-      "description": "Wake all sleeping tabs"
-    },
-    "toggle-auto-sleep": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+A",
-        "mac": "Command+Shift+A"
-      },
-      "description": "Toggle auto sleep mode"
-    }
   },
   "externally_connectable": {
     "matches": ["*://localhost/*", "*://127.0.0.1/*"]
