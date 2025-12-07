@@ -20,6 +20,9 @@
     "default_popup": "popup.html"
   },
   "externally_connectable": {
-    "matches": ["*://localhost/*", "*://127.0.0.1/*"]
+    "matches": [
+      "*://localhost/*",
+      "*://127.0.0.1/*"
+    ]
   }
 }
